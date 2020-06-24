@@ -12,10 +12,16 @@ import (
 	_ "github.com/brimsec/zq/cmd/zar/rmdirs"
 	"github.com/brimsec/zq/cmd/zar/root"
 	_ "github.com/brimsec/zq/cmd/zar/zq"
+	"github.com/brimsec/zq/pkg/iosource"
+	"github.com/brimsec/zq/pkg/s3io"
 )
 
 // Version is set via the Go linker.
 var version = "unknown"
+
+func init() {
+	iosource.Register("s3", s3io.DefaultSource)
+}
 
 func main() {
 	//XXX

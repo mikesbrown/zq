@@ -3,10 +3,9 @@ package zdx
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/brimsec/zq/pkg/bufwriter"
-	"github.com/brimsec/zq/pkg/fs"
+	"github.com/brimsec/zq/pkg/iosource"
 	"github.com/brimsec/zq/proc"
 	"github.com/brimsec/zq/zio"
 	"github.com/brimsec/zq/zio/zngio"
@@ -69,12 +68,13 @@ func newWriter(zctx *resolver.Context, path string, keyFields []string, framesiz
 	if level > 5 {
 		panic("something wrong")
 	}
+	path = iosource.NormalizePath(path)
 	name := filename(path, level)
-	f, err := fs.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	w, err := iosource.NewWriter(name)
 	if err != nil {
 		return nil, err
 	}
-	writer := bufwriter.New(f)
+	writer := bufwriter.New(w)
 	return &Writer{
 		zctx:        zctx,
 		path:        path,

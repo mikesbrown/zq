@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brimsec/zq/pkg/iosource"
+	"github.com/brimsec/zq/pkg/iosrc"
 	"github.com/brimsec/zq/zbuf"
 	"github.com/brimsec/zq/zio"
 	"github.com/brimsec/zq/zio/tzngio"
@@ -24,7 +24,7 @@ func TestDirS3Source(t *testing.T) {
 #1:record[_path:string,bar:string]
 1:[http;2;]`
 	mock := &mockLoader{}
-	source := &iosource.Registry{}
+	source := &iosrc.Registry{}
 	source.Add("s3", mock)
 
 	mock.On("NewWriter", "s3://testbucket/dir/conn.tzng").
@@ -41,7 +41,7 @@ func TestDirS3Source(t *testing.T) {
 }
 
 func TestDirUnknownSource(t *testing.T) {
-	source := &iosource.Registry{}
+	source := &iosrc.Registry{}
 	path := "unknown://path/unknown"
 	_, err := NewDirWithSource(path, "", os.Stderr, &zio.WriterFlags{Format: "tzng"}, source)
 	require.EqualError(t, err, "unknown: unsupported scheme")
@@ -63,4 +63,24 @@ func (s *mockLoader) NewReader(path string) (io.ReadCloser, error) {
 func (s *mockLoader) NewWriter(path string) (io.WriteCloser, error) {
 	args := s.Called(path)
 	return args.Get(0).(io.WriteCloser), args.Error(1)
+}
+
+func (s *mockLoader) Rename(oldpath, newpath string) error {
+	args := s.Called(oldpath, newpath)
+	return args.Error(0)
+}
+
+func (s *mockLoader) Exists(path string) (bool, error) {
+	args := s.Called(path)
+	return args.Get(0).(bool), args.Error(1)
+}
+
+func (s *mockLoader) Remove(path string) error {
+	args := s.Called(path)
+	return args.Error(0)
+}
+
+func (s *mockLoader) RemoveAll(path string) error {
+	args := s.Called(path)
+	return args.Error(0)
 }

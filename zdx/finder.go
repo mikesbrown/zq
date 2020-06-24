@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/brimsec/zq/expr"
+	"github.com/brimsec/zq/pkg/iosource"
 	"github.com/brimsec/zq/zbuf"
 	"github.com/brimsec/zq/zng"
 	"github.com/brimsec/zq/zng/resolver"
@@ -26,6 +27,7 @@ type Finder struct {
 
 // NewFinder returns an object that is used to lookup keys in a zdx.
 func NewFinder(zctx *resolver.Context, path string) *Finder {
+	path = iosource.NormalizePath(path)
 	return &Finder{
 		path: path,
 		zctx: zctx,
@@ -46,6 +48,7 @@ func (f *Finder) Open() error {
 	for {
 		r, err := newReader(f.zctx, f.path, level)
 		if err != nil {
+			// XXX
 			if os.IsNotExist(err) {
 				break
 			}
@@ -60,6 +63,7 @@ func (f *Finder) Open() error {
 		f.files = append(f.files, r)
 	}
 	if len(f.files) == 0 {
+		// XXX
 		return os.ErrNotExist
 	}
 	// Read the first record as the zdx header.

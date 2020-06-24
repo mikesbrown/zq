@@ -1,9 +1,10 @@
 package zdx
 
 import (
-	"os"
+	"fmt"
+	"io"
 
-	"github.com/brimsec/zq/pkg/fs"
+	"github.com/brimsec/zq/pkg/iosource"
 	"github.com/brimsec/zq/zio/zngio"
 	"github.com/brimsec/zq/zng/resolver"
 )
@@ -15,7 +16,7 @@ const (
 // Reader implements zbuf.Reader, io.ReadSeeker, and io.Closer.
 type Reader struct {
 	zngio.Seeker
-	file *os.File
+	reader io.ReadCloser
 }
 
 // NewReader returns a Reader ready to read a zdx.
@@ -28,17 +29,22 @@ func NewReader(zctx *resolver.Context, path string) (*Reader, error) {
 }
 
 func newReader(zctx *resolver.Context, path string, level int) (*Reader, error) {
-	f, err := fs.Open(filename(path, level))
+	path = iosource.NormalizePath(path)
+	r, err := iosource.NewReader(filename(path, level))
 	if err != nil {
 		return nil, err
 	}
-	seeker := zngio.NewSeekerWithSize(f, zctx, FrameSize)
+	rs, ok := r.(io.ReadSeeker)
+	if !ok {
+		return nil, fmt.Errorf("underyling iosource.NewReader did not return a io.ReadSeeker")
+	}
+	seeker := zngio.NewSeekerWithSize(rs, zctx, FrameSize)
 	return &Reader{
 		Seeker: *seeker,
-		file:   f,
+		reader: r,
 	}, nil
 }
 
 func (r *Reader) Close() error {
-	return r.file.Close()
+	return r.reader.Close()
 }

@@ -28,6 +28,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/brimsec/zq/pkg/iosource"
 )
 
 var (
@@ -41,11 +43,12 @@ func filename(path string, level int) string {
 	return fmt.Sprintf("%s.%d.zng", path, level)
 }
 
-func Remove(path string) error {
+func Remove(src iosource.Source, path string) error {
 	level := 0
 	for {
-		err := os.Remove(filename(path, level))
+		err := src.Remove(filename(path, level))
 		if err != nil {
+			// TODO
 			if os.IsNotExist(err) {
 				err = nil
 			}
@@ -55,16 +58,17 @@ func Remove(path string) error {
 	}
 }
 
-func Rename(oldpath, newpath string) error {
-	level := 0
-	for {
-		err := os.Rename(filename(oldpath, level), filename(newpath, level))
-		if err != nil {
-			if os.IsNotExist(err) {
-				err = nil
-			}
-			return err
-		}
-		level++
-	}
-}
+// func Rename(src iosource.Source, oldpath, newpath string) error {
+// level := 0
+// for {
+// err := src.Rename(filename(oldpath, level), filename(newpath, level))
+// if err != nil {
+// // XXX
+// if os.IsNotExist(err) {
+// err = nil
+// }
+// return err
+// }
+// level++
+// }
+// }

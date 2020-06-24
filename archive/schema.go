@@ -3,12 +3,9 @@ package archive
 import (
 	"encoding/json"
 	"errors"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"sort"
 
-	"github.com/brimsec/zq/pkg/fs"
+	"github.com/brimsec/zq/pkg/iosrc"
 	"github.com/brimsec/zq/pkg/nano"
 	"github.com/brimsec/zq/zbuf"
 	"github.com/brimsec/zq/zqe"
@@ -30,8 +27,8 @@ type LogID string
 
 // Path returns the local filesystem path for the log file, using the
 // platforms file separator.
-func (l LogID) Path(ark *Archive) string {
-	return filepath.Join(ark.Root, filepath.FromSlash(string(l)))
+func (l LogID) Path(ark *Archive) iosrc.URI {
+	return ark.Root.AppendPath(string(l))
 }
 
 type SpanInfo struct {
@@ -39,48 +36,33 @@ type SpanInfo struct {
 	LogID LogID     `json:"log_id"`
 }
 
-func writeTempFile(dir, pattern string, b []byte) (name string, err error) {
-	f, err := ioutil.TempFile(dir, pattern)
-	if err != nil {
-		return "", err
-	}
-	_, err = f.Write(b)
-	if err != nil {
-		f.Close()
-		os.Remove(f.Name())
-		return "", err
-	}
-	err = f.Close()
-	if err != nil {
-		os.Remove(f.Name())
-	}
-	return f.Name(), nil
-}
-
-func (c *Metadata) Write(path string) (err error) {
+func (c *Metadata) Write(src iosrc.Source, uri iosrc.URI) error {
 	b, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
-	tmp, err := writeTempFile(filepath.Dir(path), "."+metadataFilename+".*", b)
+	if atomicw, ok := src.(iosrc.AtomicWriter); ok {
+		return atomicw.AtomicWrite(uri, b)
+	}
+	w, err := src.NewWriter(uri)
 	if err != nil {
 		return err
 	}
-	err = os.Rename(tmp, path)
-	if err != nil {
-		os.Remove(tmp)
+	if _, err := w.Write(b); err != nil {
+		w.Close()
+		return err
 	}
-	return err
+	return w.Close()
 }
 
-func ConfigRead(path string) (*Metadata, error) {
-	f, err := fs.Open(path)
+func ConfigRead(src iosrc.Source, uri iosrc.URI) (*Metadata, error) {
+	r, err := src.NewReader(uri)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer r.Close()
 	var m Metadata
-	return &m, json.NewDecoder(f).Decode(&m)
+	return &m, json.NewDecoder(r).Decode(&m)
 }
 
 const (
@@ -108,11 +90,13 @@ func (c *CreateOptions) toMetadata() *Metadata {
 
 type Archive struct {
 	Meta *Metadata
-	Root string
+	Root iosrc.URI
 
 	// Spans contains either all spans from metadata, or a subset
 	// due to opening the archive with a filter list.
 	Spans []SpanInfo
+
+	Source iosrc.Source
 }
 
 func (ark *Archive) AppendSpans(spans []SpanInfo) error {
@@ -125,18 +109,26 @@ func (ark *Archive) AppendSpans(spans []SpanInfo) error {
 		return ark.Meta.Spans[j].Span.Ts < ark.Meta.Spans[i].Span.Ts
 	})
 
-	return ark.Meta.Write(filepath.Join(ark.Root, metadataFilename))
+	return ark.Meta.Write(ark.Source, ark.Root.AppendPath(metadataFilename))
 }
 
 type OpenOptions struct {
 	LogFilter []string
 }
 
-func OpenArchive(path string, oo *OpenOptions) (*Archive, error) {
-	if path == "" {
+func OpenArchive(root string, oo *OpenOptions) (*Archive, error) {
+	if root == "" {
 		return nil, errors.New("no archive directory specified")
 	}
-	c, err := ConfigRead(filepath.Join(path, metadataFilename))
+	uri, err := iosrc.ParseURI(root)
+	if err != nil {
+		return nil, err
+	}
+	src, err := iosrc.DefaultRegistry.Source(uri)
+	if err != nil {
+		return nil, err
+	}
+	c, err := ConfigRead(src, uri.AppendPath(metadataFilename))
 	if err != nil {
 		return nil, err
 	}
@@ -160,27 +152,39 @@ func OpenArchive(path string, oo *OpenOptions) (*Archive, error) {
 	}
 
 	return &Archive{
-		Meta:  c,
-		Root:  path,
-		Spans: spans,
+		Meta:   c,
+		Root:   uri,
+		Spans:  spans,
+		Source: src,
 	}, nil
 }
 
-func CreateOrOpenArchive(path string, co *CreateOptions, oo *OpenOptions) (*Archive, error) {
-	if path == "" {
+func CreateOrOpenArchive(root string, co *CreateOptions, oo *OpenOptions) (*Archive, error) {
+	if root == "" {
 		return nil, errors.New("no archive directory specified")
 	}
-	cfgpath := filepath.Join(path, metadataFilename)
-	if _, err := os.Stat(cfgpath); err != nil {
-		if os.IsNotExist(err) {
-			if err := os.MkdirAll(path, 0700); err != nil {
+	uri, err := iosrc.ParseURI(root)
+	if err != nil {
+		return nil, err
+	}
+	src, err := iosrc.DefaultRegistry.Source(uri)
+	if err != nil {
+		return nil, err
+	}
+	cfguri := uri.AppendPath(metadataFilename)
+	ok, err := src.Exists(cfguri)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		if mkdir, ok := src.(iosrc.DirMaker); ok {
+			if err := mkdir.MkdirAll(cfguri, 0700); err != nil {
 				return nil, err
 			}
-			err = co.toMetadata().Write(cfgpath)
 		}
-		if err != nil {
+		if err = co.toMetadata().Write(src, cfguri); err != nil {
 			return nil, err
 		}
 	}
-	return OpenArchive(path, oo)
+	return OpenArchive(root, oo)
 }

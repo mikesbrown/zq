@@ -4,13 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
-	"os"
-	"path"
-	"path/filepath"
 	"strconv"
 
-	"github.com/brimsec/zq/pkg/iosource"
+	"github.com/brimsec/zq/pkg/iosrc"
 	"github.com/brimsec/zq/zio"
 	"github.com/brimsec/zq/zng"
 )
@@ -25,14 +21,14 @@ var (
 // _path field in the boom descriptor.  Note that more than one descriptor
 // can map to the same output file.
 type Dir struct {
-	dir     string
+	dir     iosrc.URI
 	prefix  string
 	ext     string
 	stderr  io.Writer // XXX use warnings channel
 	flags   *zio.WriterFlags
 	writers map[*zng.TypeRecord]*zio.Writer
 	paths   map[string]*zio.Writer
-	source  *iosource.Registry
+	source  *iosrc.Registry
 }
 
 func unknownFormat(format string) error {
@@ -40,16 +36,16 @@ func unknownFormat(format string) error {
 }
 
 func NewDir(dir, prefix string, stderr io.Writer, flags *zio.WriterFlags) (*Dir, error) {
-	return NewDirWithSource(dir, prefix, stderr, flags, iosource.DefaultRegistry)
+	return NewDirWithSource(dir, prefix, stderr, flags, iosrc.DefaultRegistry)
 }
 
-func NewDirWithSource(dir, prefix string, stderr io.Writer, flags *zio.WriterFlags, source *iosource.Registry) (*Dir, error) {
-	scheme, ok := source.GetScheme(dir)
-	if !ok {
-		return nil, fmt.Errorf("%s: unsupported scheme", scheme)
+func NewDirWithSource(dir, prefix string, stderr io.Writer, flags *zio.WriterFlags, source *iosrc.Registry) (*Dir, error) {
+	uri, err := iosrc.ParseURI(dir)
+	if err != nil {
+		return nil, err
 	}
-	if scheme == iosource.FileScheme {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+	if dirmkr, ok := source.(iosrc.DirMaker); ok {
+		if err := dirmkr.MkdirAll(dir, 0755); err != nil {
 			return nil, err
 		}
 	}
@@ -58,7 +54,7 @@ func NewDirWithSource(dir, prefix string, stderr io.Writer, flags *zio.WriterFla
 		return nil, unknownFormat(flags.Format)
 	}
 	return &Dir{
-		dir:     dir,
+		dir:     uri,
 		prefix:  prefix,
 		ext:     e,
 		stderr:  stderr,
@@ -94,7 +90,7 @@ func (d *Dir) lookupOutput(rec *zng.Record) (*zio.Writer, error) {
 // filename returns the name of the file for the specified path. This handles
 // the case of two tds one _path, adding a # in the filename for every _path that
 // has more than one td.
-func (d *Dir) filename(r *zng.Record) (string, string) {
+func (d *Dir) filename(r *zng.Record) (iosrc.URI, string) {
 	var _path string
 	base, err := r.AccessString("_path")
 	if err == nil {
@@ -103,11 +99,7 @@ func (d *Dir) filename(r *zng.Record) (string, string) {
 		base = strconv.Itoa(r.Type.ID())
 	}
 	name := d.prefix + base + d.ext
-	if u, _ := url.Parse(d.dir); u != nil {
-		u.Path = path.Join(u.Path, name)
-		return u.String(), _path
-	}
-	return filepath.Join(d.dir, name), _path
+	return d.dir.AppendPath(name), _path
 }
 
 func (d *Dir) newFile(rec *zng.Record) (*zio.Writer, error) {
