@@ -386,12 +386,25 @@ func TestGroupbyUnit(t *testing.T) {
 		}
 	}
 
-	t.Run("forward-sorted", runner("count() by ts", 1, inBatches, outBatches))
-	t.Run("forward-sorted-with-unset", runner("count() by ts", 1, inBatchesWithUnset, outBatchesWithUnset))
-	t.Run("forward-sorted-every", runner("every 1s count()", 1, inBatches, outBatches))
-	t.Run("forward-sorted-record-key", runner("count() by foo", 1, inBatchesRecordKey, outBatchesRecordKey))
-	t.Run("forward-sorted-nested-key", runner("count() by foo.a", 1, inBatchesRecordKey, outBatchesRecordKey))
-	t.Run("forward-sorted-record-key-unset", runner("count() by foo", 1, inBatchesRecordKeyWithUnsetRecord, outBatchesRecordKeyWithUnsetRecord))
-	t.Run("forward-sorted-nested-key-unset", runner("count() by foo.a", 1, inBatchesRecordKeyWithUnsetRecord, outBatchesRecordKeyWithUnsetKey))
-	t.Run("reverse-sorted", runner("count() by ts", -1, inBatchesRev, outBatchesRev))
+	run := func(t *testing.T) {
+		t.Run("forward-sorted", runner("count() by ts -limit 1", 1, inBatches, outBatches))
+		t.Run("forward-sorted-with-unset", runner("count() by ts -limit 1", 1, inBatchesWithUnset, outBatchesWithUnset))
+		t.Run("forward-sorted-every", runner("every 1s count()  -limit 1", 1, inBatches, outBatches))
+		t.Run("forward-sorted-record-key", runner("count() by foo -limit 1", 1, inBatchesRecordKey, outBatchesRecordKey))
+		t.Run("forward-sorted-nested-key", runner("count() by foo.a -limit 1", 1, inBatchesRecordKey, outBatchesRecordKey))
+		t.Run("forward-sorted-record-key-unset", runner("count() by foo -limit 1", 1, inBatchesRecordKeyWithUnsetRecord, outBatchesRecordKeyWithUnsetRecord))
+		t.Run("forward-sorted-nested-key-unset", runner("count() by foo.a -limit 1", 1, inBatchesRecordKeyWithUnsetRecord, outBatchesRecordKeyWithUnsetKey))
+		t.Run("reverse-sorted", runner("count() by ts -limit 1", -1, inBatchesRev, outBatchesRev))
+	}
+	t.Run("memory", func(t *testing.T) {
+		run(t)
+	})
+	t.Run("spill", func(t *testing.T) {
+		saved := proc.DefaultGroupByLimit
+		proc.DefaultGroupByLimit = 1
+		defer func() {
+			proc.DefaultGroupByLimit = saved
+		}()
+		run(t)
+	})
 }
